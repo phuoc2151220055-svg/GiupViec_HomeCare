@@ -6,7 +6,6 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const morgan = require("morgan");
 const dbConnect = require("./config/dbConnect");
-const userRoutes = require("./routers/userRoutes");
 const branchRoutes = require("./routers/branchRoutes");
 const serviceRoutes = require("./routers/serviceRoutes");
 const customerRoute = require("./routers/customerRoute");
@@ -28,7 +27,6 @@ app.use(
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/api/auth", userRoutes);
 app.use("/api/services", serviceRoutes);
 app.use("/api/customers", customerRoute);
 app.use("/api/work-assignments", workAssignmentRoutes);
