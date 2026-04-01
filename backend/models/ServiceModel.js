@@ -15,7 +15,7 @@ const serviceSchema = new Schema(
     name: { type: String, required: true },
     description: { type: String },
     price: { type: Number, required: true },
-    // duration: { type: Number }, // phút
+     duration: { type: Number }, // phút
     active: { type: Boolean, default: true },
 
     // Reviews embedded

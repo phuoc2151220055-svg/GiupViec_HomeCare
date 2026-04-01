@@ -238,6 +238,7 @@ export default function HomePage() {
                       Đặt ngay
                     </Link>
                   </div>
+<<<<<<< HEAD
                 </motion.div>
               </motion.div>
 
@@ -330,6 +331,44 @@ export default function HomePage() {
           </Link>
         </motion.div>
       </footer>
+=======
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {selectedService && (
+          <section className="mt-8 rounded-2xl bg-white p-5 shadow-lg border border-indigo-100">
+            <h3 className="text-2xl font-bold text-indigo-700 mb-3">Chi tiết dịch vụ</h3>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <img
+                  src={selectedService.image || "https://via.placeholder.com/430x260?text=No+Image"}
+                  alt={selectedService.name}
+                  className="w-full h-60 object-cover rounded-lg"
+                />
+              </div>
+              <div>
+                <h4 className="text-xl font-semibold">{selectedService.name}</h4>
+                <p className="text-lg text-rose-600 font-bold mt-2">
+                  {Number(selectedService.price || 0).toLocaleString("vi-VN")}₫
+                </p>
+                <p className="mt-4 text-gray-700 whitespace-pre-line">{selectedService.description || "Không có mô tả"}</p>
+                <div className="mt-6">
+                  <Link
+                    to={`/booking/${selectedService._id}`}
+                    className="inline-block px-4 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-lg hover:brightness-110"
+                  >
+                    Tiếp tục đặt dịch vụ
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
+>>>>>>> dccb55b (cleanup: keep only service list + detail booking)
     </div>
   );
 }
