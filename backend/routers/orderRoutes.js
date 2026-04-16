@@ -6,6 +6,7 @@ const {
   getAllOrders,
   getOrderById,
   getOrdersByCustomer,
+  getFavoriteStaffByCustomer,
   updateOrder,
   deleteOrder,
   getOrdersByStaffAndDate,
@@ -15,8 +16,8 @@ const {
 // Admin xem tất cả đơn
 router.get("/", getAllOrders);
 // Khách hàng đặt dịch vụ
-// Lấy đơn theo ID
-router.get("/:id", getOrderById);
+// Lấy nhân viên yêu thích theo khách hàng
+router.get("/customer/:customerId/favorites", getFavoriteStaffByCustomer);
 // Lấy đơn theo khách hàng
 router.get("/customer/:customerId", getOrdersByCustomer);
 // Staff xem lịch làm việc

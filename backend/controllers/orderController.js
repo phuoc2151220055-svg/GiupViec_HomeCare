@@ -3,6 +3,7 @@ const Customer = require("../models/CustomerModel");
 const User = require("../models/UserModel");
 const Service = require("../models/ServiceModel");
 const Branch = require("../models/BranchModel");
+const { getIO, sendNotificationToCustomer } = require("../config/socketIO");
 
 // 🧾 1️⃣ Tạo đơn hàng
 const createOrder = async (req, res) => {
@@ -226,6 +227,19 @@ const getAssignedOrdersByStaff = async (req, res) => {
   }
 };
 
+// Helper function to get notification message based on status
+const getNotificationMessage = (status, staffName) => {
+  const messages = {
+    accepted: `${staffName} đã nhận đơn`,
+    in_progress: `${staffName} đang thực hiện`,
+    completed: `${staffName} đã hoàn thành đơn`,
+    canceled: `${staffName} đã hủy đơn`,
+    pending: `Chờ ${staffName} xác nhận`,
+    assigning: `Đang phân công cho nhân viên`,
+  };
+  return messages[status] || `Trạng thái đơn hàng: ${status}`;
+};
+
 // ✏️ 7️⃣ Cập nhật đơn hàng
 const updateOrder = async (req, res) => {
   try {
@@ -234,6 +248,10 @@ const updateOrder = async (req, res) => {
 
     const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+
+    // Track old status for notification
+    const oldStatus = order.status;
+    const newStatus = restData.status || order.status;
 
     if (staffId) {
       const staffUser = await User.findById(staffId);
@@ -248,6 +266,35 @@ const updateOrder = async (req, res) => {
 
     Object.assign(order, restData);
     await order.save();
+
+    // Emit notification if status changed
+    if (newStatus !== oldStatus) {
+      try {
+        const populatedOrder = await Order.findById(orderId)
+          .populate("customer", "name phone email _id clerkId")
+          .populate("staff", "name email phone")
+          .populate("service", "name");
+
+        if (populatedOrder && populatedOrder.customer) {
+          // Use clerkId to identify customer in socket
+          const customerId = populatedOrder.customer.clerkId || populatedOrder.customer._id.toString();
+          const staffName = populatedOrder.staff?.name || "Hệ thống";
+          const notificationMessage = getNotificationMessage(newStatus, staffName);
+          
+          // Send notification to customer
+          sendNotificationToCustomer(customerId, {
+            type: "order_status",
+            orderId: order._id,
+            status: newStatus,
+            staffName: staffName,
+            message: notificationMessage,
+            scheduledAt: populatedOrder.scheduledAt,
+          });
+        }
+      } catch (err) {
+        console.error("❌ Error sending notification:", err.message);
+      }
+    }
 
     const populated = await Order.findById(orderId)
       .populate("customer", "name phone email")

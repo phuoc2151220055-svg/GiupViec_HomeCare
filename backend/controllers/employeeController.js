@@ -113,6 +113,56 @@ const getEmployeesByBranch = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+const getEmployeesByBranchAndService = async (req, res) => {
+  try {
+    const { branchId, serviceId } = req.params;
+    const { date } = req.query;
+
+    const employees = await Employee.find({
+      branch: branchId,
+      role: "staff",
+      services: serviceId,
+    }).populate("branch", "name address");
+
+    const start = date ? new Date(date) : null;
+    const end = date ? new Date(date) : null;
+    if (start && end) {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    const result = await Promise.all(
+      employees.map(async (emp) => {
+        let busy = false;
+
+        if (start && end) {
+          const hasOrder = await Order.exists({
+            staff: emp._id,
+            scheduledAt: { $gte: start, $lte: end },
+            status: { $nin: ["completed", "canceled"] },
+          });
+
+          const hasAssignment = await WorkAssignment.exists({
+            staff: emp._id,
+            startTime: { $lte: end },
+            endTime: { $gte: start },
+            status: { $nin: ["completed", "canceled"] },
+          });
+
+          busy = Boolean(hasOrder || hasAssignment);
+        }
+
+        const { password, ...rest } = emp.toObject();
+        return { ...rest, busy };
+      })
+    );
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
 const getBranchOrder = async (req, res) => {
   try {
     const employees = await Employee.find({ branch: req.params.branchId });
@@ -164,5 +214,13 @@ const getEmployeesByBranchWithStatus = async (req, res) => {
   }
 };
 module.exports = {
-  deleteEmployee,updateEmployee,getEmployeeById,getAllEmployees,createEmployee,getEmployeesByBranch,getBranchOrder,getEmployeesByBranchWithStatus
+  deleteEmployee,
+  updateEmployee,
+  getEmployeeById,
+  getAllEmployees,
+  createEmployee,
+  getEmployeesByBranch,
+  getEmployeesByBranchAndService,
+  getBranchOrder,
+  getEmployeesByBranchWithStatus,
 }

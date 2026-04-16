@@ -25,6 +25,8 @@ export default function Booking() {
   const [branches, setBranches] = useState([]);
   const [staffs, setStaffs] = useState([]);
   const [selectedStaff, setSelectedStaff] = useState("");
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffFetchError, setStaffFetchError] = useState("");
 
   const [formData, setFormData] = useState({
     branch: "",
@@ -62,26 +64,53 @@ export default function Booking() {
           ? res.data
           : res.data.branches || [];
         setBranches(data);
+        if (data.length > 0) {
+          setFormData((prev) => ({ ...prev, branch: data[0]._id }));
+        }
       })
       .catch((err) => console.error("Lỗi khi tải chi nhánh:", err));
   }, []);
 
   // ===== LẤY NHÂN VIÊN =====
   useEffect(() => {
-    if (!formData.branch || !id) return;
+    if (!formData.branch || !formData.scheduledAt) {
+      setStaffs([]);
+      return;
+    }
+
+    setStaffLoading(true);
+    setStaffFetchError("");
+
+    const dateStr = new Date(formData.scheduledAt).toISOString().split('T')[0];
+
     axios
       .get(
-        `http://localhost:5000/api/employees/by-branch-and-service/${formData.branch}/${id}`
+        `http://localhost:5000/api/employees/branch/${formData.branch}/availability?date=${dateStr}`
       )
-      .then((res) => setStaffs(res.data || []))
-      .catch((err) => console.error("Lỗi khi tải danh sách nhân viên:", err));
-  }, [formData.branch, id]);
+      .then((res) => {
+        const data = Array.isArray(res.data) ? res.data : [];
+        const availableStaffs = data.filter((emp) => !emp.busy);
+        setStaffs(availableStaffs);
+      })
+      .catch((err) => {
+        console.error("Lỗi khi tải danh sách nhân viên:", err);
+        setStaffFetchError("Không thể tải danh sách nhân viên rảnh. Vui lòng thử lại.");
+        setStaffs([]);
+      })
+      .finally(() => setStaffLoading(false));
+  }, [formData.branch, formData.scheduledAt]);
 
   // ===== LẤY TỈNH/THÀNH =====
   useEffect(() => {
     axios
       .get("https://provinces.open-api.vn/api/p/")
-      .then((res) => setProvinces(res.data))
+      .then((res) => {
+        setProvinces(res.data);
+        const daNang = res.data.find((p) => p.name.includes("Đà Nẵng"));
+        if (daNang) {
+          setSelectedProvince(daNang.code);
+        }
+      })
       .catch((err) => console.error("Lỗi khi tải tỉnh/thành:", err));
   }, []);
 
@@ -257,47 +286,98 @@ export default function Booking() {
           </h2>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* CHI NHÁNH */}
-            <div>
-              <label className="block font-medium mb-2 flex items-center gap-2">
-                <MapPin className="text-teal-600" /> Chi nhánh
-              </label>
-              <select
-                name="branch"
-                value={formData.branch}
-                onChange={handleChange}
-                required
-                className="w-full border px-4 py-3 rounded-lg focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="">-- Chọn chi nhánh --</option>
-                {branches.map((b) => (
-                  <option key={b._id} value={b._id}>
-                    {b.name} - {b.address}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* NHÂN VIÊN */}
-            {staffs.length > 0 && (
-              <div>
+            {/* CHI NHÁNH - HIỂN THỊ THÔNG TIN CHỈ */}
+            {branches.length > 0 && (
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                 <label className="block font-medium mb-2 flex items-center gap-2">
-                  <UserCheck className="text-teal-600" /> Nhân viên yêu thích
+                  <MapPin className="text-blue-600" /> Chi nhánh phục vụ
                 </label>
-                <select
-                  value={selectedStaff}
-                  onChange={(e) => setSelectedStaff(e.target.value)}
-                  className="w-full border px-4 py-3 rounded-lg focus:ring-2 focus:ring-teal-500"
-                >
-                  <option value="">-- Không chọn --</option>
-                  {staffs.map((s) => (
-                    <option key={s._id} value={s._id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="text-gray-700 font-semibold">
+                  {branches[0].name}
+                </div>
+                <div className="text-gray-600 text-sm mt-1">
+                  {branches[0].address}
+                </div>
+                <input
+                  type="hidden"
+                  name="branch"
+                  value={formData.branch}
+                />
               </div>
             )}
+
+            {/* NHÂN VIÊN HIỆN CÓ */}
+            <div className="bg-slate-50 p-6 rounded-3xl border border-teal-100">
+              <div className="flex items-center gap-2 mb-4">
+                <UserCheck className="text-teal-600" />
+                <div>
+                  <h3 className="text-lg font-semibold">Nhân viên hiện có</h3>
+                  <p className="text-sm text-gray-500">
+                    Chọn chi nhánh và ngày đặt để xem nhân viên đang rảnh tại chi nhánh đó.
+                  </p>
+                </div>
+              </div>
+
+              {formData.branch && formData.scheduledAt ? (
+                staffLoading ? (
+                  <p className="text-sm text-gray-500">Đang kiểm tra nhân viên rảnh...</p>
+                ) : staffs.length > 0 ? (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {staffs.map((s) => {
+                      const avatarSrc =
+                        s.avatarUrl ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                          s.name
+                        )}&background=34d399&color=fff`;
+                      const isSelected = selectedStaff === s._id;
+                      return (
+                        <button
+                          key={s._id}
+                          type="button"
+                          onClick={() => setSelectedStaff(s._id)}
+                          className={`flex flex-col items-center p-5 rounded-2xl border-2 bg-white text-center shadow-sm hover:shadow-md transition ${
+                            isSelected
+                              ? "border-teal-500 bg-teal-50"
+                              : "border-gray-200 hover:border-teal-300"
+                          }`}
+                        >
+                          <img
+                            src={avatarSrc}
+                            alt={s.name}
+                            className="w-20 h-20 rounded-full object-cover border-2 border-gray-300 mb-3"
+                          />
+                          <div className="w-full">
+                            <p className="font-bold text-gray-900 text-lg">{s.name}</p>
+                            <div className="mt-2 space-y-1 text-sm text-gray-600">
+                              {s.email && (
+                                <p className="truncate">📧 {s.email}</p>
+                              )}
+                              {s.phone && (
+                                <p className="truncate">📱 {s.phone}</p>
+                              )}
+                            </div>
+                            {isSelected && (
+                              <div className="mt-3 px-3 py-1.5 bg-teal-500 text-white text-xs font-semibold rounded-full">
+                                ✓ Đã chọn
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    {staffFetchError ||
+                      "Không có nhân viên rảnh tại chi nhánh này vào ngày bạn chọn."}
+                  </p>
+                )
+              ) : (
+                <p className="text-sm text-gray-500">
+                  Vui lòng chọn chi nhánh và ngày đặt để xem nhân viên hiện có.
+                </p>
+              )}
+            </div>
 
             {/* NGÀY ĐẶT */}
             <div>
@@ -381,30 +461,17 @@ export default function Booking() {
               </div>
             )}
 
-            {/* ĐỊA CHỈ */}
+            {/* ĐỊA CHỈ - CHỈ ĐỀ DÀ NẴNG */}
             <div>
               <label className="block font-medium mb-2 flex items-center gap-2">
-                <Home className="text-teal-600" /> Địa chỉ
+                <Home className="text-teal-600" /> Địa chỉ (Đà Nẵng)
               </label>
 
-              {/* TỈNH */}
-              <select
-                value={selectedProvince}
-                onChange={(e) => {
-                  setSelectedProvince(e.target.value);
-                  setSelectedDistrict("");
-                  setSelectedWard("");
-                }}
-                required
-                className="w-full border px-4 py-3 rounded-lg mb-4 focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="">-- Chọn tỉnh/thành phố --</option>
-                {provinces.map((p) => (
-                  <option key={p.code} value={p.code}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              {/* TỈNH - HIỂN THỊ THÔNG TIN CHỈ */}
+              <div className="bg-emerald-50 p-3 rounded-lg mb-4 border border-emerald-200">
+                <span className="text-sm text-gray-600">Thành phố: </span>
+                <span className="font-semibold text-gray-800">Đà Nẵng</span>
+              </div>
 
               {/* QUẬN */}
               <select
@@ -446,7 +513,7 @@ export default function Booking() {
                 value={formData.detailAddress}
                 onChange={handleChange}
                 required
-                placeholder="Ví dụ: 123 Nguyễn Văn Linh, nhà số 5"
+                placeholder="Ví dụ: 123 Đường Nguyễn Văn Linh, Quận Hải Châu, Đà Nẵng"
                 className="w-full border px-4 py-3 rounded-lg focus:ring-2 focus:ring-teal-500"
               />
             </div>

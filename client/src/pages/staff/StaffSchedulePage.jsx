@@ -46,6 +46,7 @@ export default function StaffSchedulePage() {
     try {
       await axios.patch(`http://localhost:5000/api/orders/${orderId}`, {
         status: newStatus,
+        staffId: staffId, // Send staffId so backend can get staff info
       });
       setOrders((prev) =>
         prev.map((o) => (o._id === orderId ? { ...o, status: newStatus } : o))

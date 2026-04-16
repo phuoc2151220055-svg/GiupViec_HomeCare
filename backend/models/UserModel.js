@@ -9,6 +9,7 @@ const userSchema = new Schema(
     name: { type: String, required: true },
     email: { type: String, unique: true, required: true },
     phone: { type: String },
+    avatarUrl: { type: String },
     password: { type: String, required: true }, // bắt buộc khi tạo user
     role: { type: String, enum: ROLES, required: true, default: "staff" },
     branch: { type: Schema.Types.ObjectId, ref: "Branch" },

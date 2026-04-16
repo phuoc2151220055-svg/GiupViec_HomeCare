@@ -1,11 +1,15 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const app = express();
+const http = require("http");
 const PORT = 5000;
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const morgan = require("morgan");
 const dbConnect = require("./config/dbConnect");
+const { initSocketIO } = require("./config/socketIO");
+
+const server = http.createServer(app);
 const userRoutes = require("./routers/userRoutes");
 const branchRoutes = require("./routers/branchRoutes");
 const serviceRoutes = require("./routers/serviceRoutes");
@@ -14,7 +18,10 @@ const workAssignmentRoutes = require("./routers/workAssignmentRoutes");
 const employeeRoutes = require("./routers/employeeRoute");
 const orderRoutes = require("./routers/orderRoutes");
 const momoRoutes = require("./routers/momoRoutes");
-dbConnect()
+dbConnect();
+
+// Initialize Socket.IO
+initSocketIO(server);
 app.use(cors({
   origin: "http://localhost:5173",
   credentials: true
@@ -43,9 +50,6 @@ app.use((req, res, next) => {
   next();
 });
 
-
-app.listen(PORT, () => {
-  console.log(
-    `Server is running at PORT ${PORT}`
-  );
+server.listen(PORT, () => {
+  console.log(`Server is running at PORT ${PORT}`);
 });

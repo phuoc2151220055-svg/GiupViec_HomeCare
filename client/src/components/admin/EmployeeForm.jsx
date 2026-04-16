@@ -5,6 +5,7 @@ export default function EmployeeForm({ onSubmit, initialData, branches }) {
     name: "",
     email: "",
     phone: "",
+    avatarUrl: "",
     password: "",
     role: "staff",
     branch: "",
@@ -18,6 +19,7 @@ export default function EmployeeForm({ onSubmit, initialData, branches }) {
         name: initialData.name || "",
         email: initialData.email || "",
         phone: initialData.phone || "",
+        avatarUrl: initialData.avatarUrl || "",
         password: "",
         role: initialData.role || "staff",
         branch: initialData.branch?._id || "", 
@@ -111,6 +113,19 @@ export default function EmployeeForm({ onSubmit, initialData, branches }) {
           name="phone"
           value={form.phone}
           onChange={handleChange}
+          className="w-full border rounded p-2 focus:outline-none focus:ring focus:border-indigo-500"
+        />
+      </div>
+
+      {/* Avatar URL */}
+      <div>
+        <label className="block font-medium mb-1">Ảnh đại diện (URL)</label>
+        <input
+          type="text"
+          name="avatarUrl"
+          value={form.avatarUrl}
+          onChange={handleChange}
+          placeholder="https://example.com/avatar.jpg"
           className="w-full border rounded p-2 focus:outline-none focus:ring focus:border-indigo-500"
         />
       </div>

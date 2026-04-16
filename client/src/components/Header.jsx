@@ -3,6 +3,7 @@ import axios from "axios";
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ClipboardList } from "lucide-react"; // 👉 icon đẹp
+import NotificationBell from "./NotificationBell";
 
 export default function Header() {
   const navLinks = [
@@ -74,17 +75,20 @@ export default function Header() {
         {/* Desktop User */}
         <div className="hidden md:flex items-center gap-4">
           {user ? (
-            <UserButton afterSignOutUrl="/">
-              <UserButton.MenuItems>
-                <UserButton.Action label="manageAccount" />
-                <UserButton.Action
-                  label="Lịch sử đặt hàng"
-                  labelIcon={<ClipboardList className="w-4 h-4" />}
-                  onClick={() => navigate("/orders")}
-                />
-                <UserButton.Action label="signOut" />
-              </UserButton.MenuItems>
-            </UserButton>
+            <>
+              <NotificationBell />
+              <UserButton afterSignOutUrl="/">
+                <UserButton.MenuItems>
+                  <UserButton.Action label="manageAccount" />
+                  <UserButton.Action
+                    label="Lịch sử đặt hàng"
+                    labelIcon={<ClipboardList className="w-4 h-4" />}
+                    onClick={() => navigate("/orders")}
+                  />
+                  <UserButton.Action label="signOut" />
+                </UserButton.MenuItems>
+              </UserButton>
+            </>
           ) : (
             <button
               onClick={openSignIn}
