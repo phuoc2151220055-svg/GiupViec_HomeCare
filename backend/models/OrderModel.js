@@ -37,12 +37,23 @@ const orderSchema = new Schema(
       comment: { type: String },
       createdAt: { type: Date, default: Date.now },
     },
+    staffReview: {
+      rating: { type: Number, min: 1, max: 5 },
+      comment: { type: String },
+      createdAt: { type: Date, default: Date.now },
+    },
     staffResponse: {
       type: String,
       enum: ["none", "accepted", "rejected"],
       default: "none",
     },
     responseAt: { type: Date },
+    completionImages: [
+      {
+        url: { type: String },
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );
