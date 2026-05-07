@@ -6,23 +6,28 @@ export default function StaffWorkPage() {
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState("today"); // today | week | all
 
-  const user = JSON.parse(sessionStorage.getItem("user")) || {
-    id: "68c55b7d8d0d6ec66353bce7",
-    name: "Nguyễn Văn A",
-  };
+  const storedUser = sessionStorage.getItem("user");
+  const user = storedUser
+    ? JSON.parse(storedUser)
+    : {
+        id: "68c55b7d8d0d6ec66353bce7",
+        name: "Nguyễn Văn A",
+      };
+  const staffId = user.id || user._id;
 
   // Lấy tất cả order của nhân viên
   useEffect(() => {
     const fetchOrders = async () => {
+      if (!staffId) return;
       try {
-        const res = await axios.get(`http://localhost:5000/api/orders/staff/${user.id}`);
+        const res = await axios.get(`http://localhost:5000/api/orders/staff/${staffId}`);
         setOrders(res.data);
       } catch (err) {
         console.error("Fetch orders failed:", err);
       }
     };
     fetchOrders();
-  }, [user.id]);
+  }, [staffId]);
 
   // Lọc theo filter
   const filteredOrders = orders.filter((o) => {
