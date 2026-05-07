@@ -3,6 +3,9 @@ const Customer = require("../models/CustomerModel");
 const User = require("../models/UserModel");
 const Service = require("../models/ServiceModel");
 const Branch = require("../models/BranchModel");
+const mongoose = require("mongoose");
+const { createNotification } = require("./notificationController");
+const { getIO, sendNotificationToCustomer } = require("../config/socketIO");
 
 // 🧾 1️⃣ Tạo đơn hàng
 const createOrder = async (req, res) => {
@@ -49,10 +52,13 @@ const createOrder = async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy dịch vụ" });
 
     // 🔸 Xử lý tính giá
+    const HOURLY_RATE = 150000;
+    const PACKAGE_DISCOUNT = 0.2;
+
     let price = 0;
     let start = startTime ? new Date(startTime) : null;
     let end = endTime ? new Date(endTime) : null;
-    const pricingMode = pricingType || serviceDoc.pricingType;
+    const pricingMode = pricingType || serviceDoc.pricingType || "Theo giờ";
 
     if (pricingMode === "Theo giờ") {
       if (!start || !end || end <= start) {
@@ -61,11 +67,27 @@ const createOrder = async (req, res) => {
         });
       }
       const hours = (end - start) / (1000 * 60 * 60);
-      price = Math.round(serviceDoc.pricePerHour * hours);
+      price = Math.round(HOURLY_RATE * hours);
     } else {
       // Trọn gói
-      price = serviceDoc.fixedPrice || 0;
-      start = new Date(scheduledAt);
+      const PACKAGE_HOURS = 5;
+
+      if (!start) {
+        // Nếu chưa có start (không lúc), lấy scheduledAt
+        if (!scheduledAt) {
+          return res.status(400).json({
+            error: "Vui lòng cung cấp thời gian bắt đầu cho gói trọn gói",
+          });
+        }
+        start = new Date(scheduledAt);
+      }
+
+      end = new Date(start.getTime() + PACKAGE_HOURS * 60 * 60 * 1000);
+      price = Math.round(PACKAGE_HOURS * HOURLY_RATE * (1 - PACKAGE_DISCOUNT));
+    }
+
+    if (Number.isNaN(price)) {
+      return res.status(400).json({ error: "Không thể tính giá dịch vụ, vui lòng kiểm tra dữ liệu đầu vào" });
     }
 
     // 🔸 Tạo đơn hàng mới
@@ -154,7 +176,20 @@ const getOrderById = async (req, res) => {
 const getOrdersByCustomer = async (req, res) => {
   try {
     const { customerId } = req.params;
-    const orders = await Order.find({ customer: customerId })
+
+    // Find customer by clerkId or by _id if customerId is ObjectId
+    let customer;
+    if (mongoose.Types.ObjectId.isValid(customerId)) {
+      customer = await Customer.findById(customerId);
+    }
+    if (!customer) {
+      customer = await Customer.findOne({ clerkId: customerId });
+    }
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    const orders = await Order.find({ customer: customer._id })
       .populate("service", "name pricingType pricePerHour fixedPrice")
       .populate("staff", "name email")
       .populate("branch", "name");
@@ -207,17 +242,92 @@ const getAssignedOrdersByStaff = async (req, res) => {
   }
 };
 
+// 📢 Helper: Tạo tiêu đề và nội dung thông báo theo trạng thái
+const getNotificationMessage = (status, staffName) => {
+  const messages = {
+    pending: {
+      title: "Đơn hàng của bạn đang chờ nhân viên xác nhận",
+      message: `Nhân viên ${staffName} đã được phân công. Chúng tôi đang chờ xác nhận từ họ.`,
+    },
+    accepted: {
+      title: "Nhân viên đã chấp nhận đơn hàng của bạn",
+      message: `${staffName} đã chấp nhận thực hiện dịch vụ cho bạn.`,
+    },
+    in_progress: {
+      title: "Nhân viên đang thực hiện dịch vụ",
+      message: `${staffName} đang tiến hành thực hiện dịch vụ cho bạn.`,
+    },
+    completed: {
+      title: "Dịch vụ hoàn thành thành công",
+      message: `${staffName} đã hoàn thành dịch vụ. Cảm ơn bạn đã sử dụng dịch vụ của chúng tôi.`,
+    },
+    canceled: {
+      title: "Đơn hàng đã bị hủy",
+      message: `Đơn hàng của bạn đã bị hủy bởi ${staffName}.`,
+    },
+    assigning: {
+      title: "Đơn hàng đang được phân công",
+      message: "Chúng tôi đang tìm nhân viên phù hợp cho đơn hàng của bạn.",
+    },
+  };
+
+  return messages[status] || { title: "Cập nhật trạng thái đơn hàng", message: "Đơn hàng của bạn có cập nhật mới" };
+};
+
 // ✏️ 7️⃣ Cập nhật đơn hàng
 const updateOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const updateData = req.body;
+    const { staffId, ...restData } = req.body;
 
     const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
 
-    Object.assign(order, updateData);
+    const oldStatus = order.status;
+    const newStatus = restData.status || oldStatus;
+
+    if (staffId) {
+      const staffUser = await User.findById(staffId);
+      if (!staffUser) {
+        return res.status(404).json({ error: "Không tìm thấy nhân viên" });
+      }
+      order.staff = staffUser._id;
+      if (!restData.status) {
+        order.status = "pending";
+      }
+    }
+
+    Object.assign(order, restData);
     await order.save();
+
+    // 📢 Gửi thông báo nếu status thay đổi
+    if (newStatus && newStatus !== oldStatus) {
+      const staffInfo = await User.findById(order.staff).select("name");
+      const staffName = staffInfo?.name || "Nhân viên";
+
+      const { title, message } = getNotificationMessage(newStatus, staffName);
+
+      await createNotification({
+        customer: order.customer,
+        order: orderId,
+        staff: order.staff,
+        type: "status_update",
+        status: newStatus,
+        title,
+        message,
+        staffName,
+      });
+
+      // 📡 Gửi thông báo real-time qua Socket.IO
+      sendNotificationToCustomer(order.customer.toString(), {
+        orderId,
+        status: newStatus,
+        title,
+        message,
+        staffName,
+        timestamp: new Date(),
+      });
+    }
 
     const populated = await Order.findById(orderId)
       .populate("customer", "name phone email")
@@ -249,7 +359,20 @@ const deleteOrder = async (req, res) => {
 const getFavoriteStaffByCustomer = async (req, res) => {
   try {
     const { customerId } = req.params;
-    const orders = await Order.find({ customer: customerId, staff: { $ne: null } })
+
+    // Find customer by clerkId or by _id if customerId is ObjectId
+    let customer;
+    if (mongoose.Types.ObjectId.isValid(customerId)) {
+      customer = await Customer.findById(customerId);
+    }
+    if (!customer) {
+      customer = await Customer.findOne({ clerkId: customerId });
+    }
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    const orders = await Order.find({ customer: customer._id, staff: { $ne: null } })
       .populate("staff", "name email phone branch");
 
     const unique = [];
@@ -330,29 +453,90 @@ const addReview = async (req, res) => {
     if (order.status !== "completed") return res.status(400).json({ message: "Chỉ review khi đơn đã hoàn thành" });
     if (!order.staff) return res.status(400).json({ message: "Chưa có nhân viên để review" });
 
-    const staff = await User.findById(order.staff._id);
-
-    // Tìm service trong capableServices
-    const serviceIndex = staff.capableServices.findIndex(
-      (cs) => cs.service.toString() === order.service._id.toString()
-    );
-
-    if (serviceIndex === -1) return res.status(400).json({ message: "Nhân viên không thực hiện dịch vụ này" });
-
-    // Thêm review
-    staff.capableServices[serviceIndex].reviews.push({
-      customer: order.customer._id,
+    // Thêm service review vào order
+    order.review = {
       rating,
       comment,
-      order: order._id,
-    });
+      createdAt: new Date(),
+    };
 
-    await staff.save();
+    await order.save();
 
-    res.json({ message: "Review thành công", review: staff.capableServices[serviceIndex].reviews.at(-1) });
+    res.json({ message: "Review thành công", review: order.review });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+const addStaffReview = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { rating, comment } = req.body;
+
+    const order = await Order.findById(orderId).populate("staff service customer");
+    if (!order) return res.status(404).json({ message: "Không tìm thấy đơn" });
+    if (order.status !== "completed") return res.status(400).json({ message: "Chỉ review khi đơn đã hoàn thành" });
+    if (!order.staff) return res.status(400).json({ message: "Chưa có nhân viên để review" });
+
+    // Thêm staff review vào order
+    order.staffReview = {
+      rating,
+      comment,
+      createdAt: new Date(),
+    };
+
+    await order.save();
+
+    res.json({ message: "Review nhân viên thành công", review: order.staffReview });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+const uploadCompletionImage = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: "Không có file được tải lên" });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+    }
+
+    try {
+      const cloudinary = require("../config/cloudinary");
+      const b64 = Buffer.from(req.file.buffer).toString("base64");
+      const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+
+      const result = await cloudinary.uploader.upload(dataURI, {
+        resource_type: "auto",
+        folder: "btaskee/completion-images",
+        public_id: `order_${orderId}_${Date.now()}`,
+      });
+
+      res.json({
+        message: "Tải lên thành công",
+        url: result.secure_url,
+      });
+    } catch (cloudinaryError) {
+      console.error("Cloudinary error:", cloudinaryError);
+      // Fallback to base64 if Cloudinary fails
+      const base64 = req.file.buffer.toString("base64");
+      const imageUrl = `data:${req.file.mimetype};base64,${base64}`;
+      
+      res.json({
+        message: "Tải lên thành công (lưu cục bộ)",
+        url: imageUrl,
+      });
+    }
+  } catch (err) {
+    console.error("Upload error:", err);
+    res.status(500).json({ error: "Lỗi tải lên: " + err.message });
   }
 };
 
@@ -366,5 +550,5 @@ module.exports = {
   updateOrder,
   deleteOrder,
   getFavoriteStaffByCustomer,acceptOrder,rejectOrder,getOrdersByStaff,
-  addReview
+  addReview, addStaffReview, uploadCompletionImage
 };
